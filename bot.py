@@ -137,10 +137,13 @@ def get_ai_response(user_message, bio, assistant_name, sender_name="", sender_us
         messages.extend(history)
     messages.append({"role": "user", "content": user_message})
 
-    payload = {
-        "model": getattr(config, "DO_AI_MODEL", None) or "gpt-3.5-turbo",
-        "messages": messages,
-    }
+    # DigitalOcean GenAI agents use the model configured in the dashboard and
+    # reject an unknown "model" field (400). So only send a model name if one is
+    # explicitly set; otherwise let the agent use its own.
+    payload = {"messages": messages}
+    model = getattr(config, "DO_AI_MODEL", "") or ""
+    if model.strip():
+        payload["model"] = model.strip()
     try:
         response = requests.post(url, headers=headers, json=payload, timeout=30)
         response.raise_for_status()
