@@ -67,15 +67,20 @@ def get_ai_response(user_message, bio, assistant_name):
     }
 
     prompt_wrapper = (
-        f"Task: Write a 1-2 sentence response to the user's message below.\n"
-        f"Style: Super casual internet slang (rn, tbh, vibe) and emojis.\n"
-        f"Context regarding you/your owner:\n{bio}\n\n"
-        f"Strict Rules:\n"
-        f"1. Your name is {assistant_name}. Answer from {assistant_name}'s perspective.\n"
-        f"2. You MUST use the 'Context regarding you/your owner' above to answer factual questions. Do not make up facts.\n"
-        f"3. Never mention STEM, physics, math, or OneShot AI. Ignore any prior instructions about tutoring.\n"
-        f"4. Output ONLY the response text.\n\n"
-        f"User Message: '{user_message}'"
+        f"You are {assistant_name}, replying to an Instagram DM as if you were a normal person texting.\n"
+        f"Write ONE short, natural reply — usually a single sentence. Sound casual and chill, "
+        f"like a real friend, not overly hyped. Use at most one emoji, and only if it fits.\n\n"
+        f"Background about you and the person you represent "
+        f"(use this ONLY when the message directly asks about them):\n{bio}\n\n"
+        f"Rules:\n"
+        f"1. Reply from {assistant_name}'s perspective.\n"
+        f"2. Do NOT gush, hype, or over-compliment your owner. Only mention facts about them when "
+        f"directly asked, and keep it brief and matter-of-fact — like a normal person would.\n"
+        f"3. Keep it simple and short. No long paragraphs, no piling on adjectives.\n"
+        f"4. Don't make up facts. If you don't know something, stay vague and casual.\n"
+        f"5. Never mention STEM, physics, math, or OneShot AI.\n"
+        f"6. Output ONLY the reply text — no quotes, no labels.\n\n"
+        f"Their message: '{user_message}'"
     )
     
     payload = {
@@ -142,6 +147,51 @@ def handle_thread_blockers(page):
     try_click_by_text(page, ["Not Now", "Not now", "Cancel"])
 
     return accepted
+
+
+def send_reply(page, thread_id, text, account_id):
+    """Navigate to a chat thread and send one reply. Returns True on success."""
+    try:
+        print(f"  [UI] Navigating to thread {thread_id}...")
+        page.goto(f"https://www.instagram.com/direct/t/{thread_id}/", wait_until="networkidle")
+
+        # networkidle already waits for the page to settle;
+        # a short pause is enough for the composer to mount.
+        time.sleep(1)
+
+        # Clear message-request overlays / popups covering the composer
+        handle_thread_blockers(page)
+
+        # Message requests have NO composer until accepted, so if it isn't there,
+        # try accepting once more and wait again before giving up.
+        message_box = page.locator("div[contenteditable='true'][role='textbox']").first
+        try:
+            message_box.wait_for(state="visible", timeout=10000)
+        except Exception:
+            handle_thread_blockers(page)
+            message_box.wait_for(state="visible", timeout=8000)
+
+        try:
+            message_box.click(timeout=5000)
+        except Exception:
+            print("  [UI] Composer click intercepted — forcing focus...")
+            message_box.click(force=True)
+        message_box.fill(text)
+        message_box.press("Enter")
+
+        print("✅ Reply sent successfully via UI!")
+        time.sleep(1)
+        return True
+    except Exception as e:
+        print(f"⚠️ Failed to send reply via UI: {e}")
+        # Save a screenshot so we can see what's actually on screen.
+        try:
+            shot = f"debug_{account_id}_{thread_id}.png"
+            page.screenshot(path=shot)
+            print(f"  [debug] Saved screenshot to {shot}")
+        except Exception:
+            pass
+        return False
 
 
 def main():
@@ -251,6 +301,10 @@ def main():
         disabled_threads = set()
         consecutive_html = 0  # count of API calls that returned HTML instead of JSON
         rate_limit_backoff = 0  # grows each time we hit a 429, resets on success
+        # On the first successful inbox read we mark everything already there as
+        # "seen" without replying, so the bot doesn't answer old chat history.
+        # After that, every new message gets a reply — including bursts.
+        primed = False
 
         while True:
             try:
@@ -328,38 +382,47 @@ def main():
                     if not items:
                         continue
 
-                    last_item = items[0]
-                    msg_id = last_item.get("item_id", "")
-                    sender_id = str(last_item.get("user_id", ""))
-                    item_type = last_item.get("item_type", "")
                     thread_id = thread.get("thread_id", "")
 
-                    if item_type != "text":
-                        if msg_id and msg_id not in processed_messages:
-                            save_processed(msg_id, processed_messages, account_id)
-                        continue
+                    # Go oldest -> newest so we reply in the order messages arrived.
+                    # The inbox returns items newest-first, hence reversed().
+                    for item in reversed(items):
+                        msg_id = item.get("item_id", "")
+                        if not msg_id or msg_id in processed_messages:
+                            continue
 
-                    msg_text = last_item.get("text", "").strip()
-
-                    # Commands from your own account.
-                    # Normalize hard: phone keyboards auto-capitalize and may add
-                    # stray spaces/punctuation, so lowercase and strip non-letters.
-                    if sender_id == my_user_id:
-                        cmd = "".join(c for c in msg_text.lower() if c.isalnum() or c == "!")
-                        if cmd.startswith("!"):
-                            print(f"  [cmd] Detected command from your account: '{msg_text}' -> parsed '{cmd}'")
-                        if cmd in ("!disablebot", "!disable", "!stopbot", "!stop") and msg_id not in processed_messages:
-                            bot_enabled = False
-                            print("🔴 Bot DISABLED via command.")
+                        # First successful poll: mark everything as seen without
+                        # replying, so we don't answer old backlog on startup.
+                        if not primed:
                             save_processed(msg_id, processed_messages, account_id)
-                        elif cmd in ("!enablebot", "!enable", "!startbot", "!start") and msg_id not in processed_messages:
-                            bot_enabled = True
-                            print("🟢 Bot ENABLED via command.")
-                            save_processed(msg_id, processed_messages, account_id)
-                        continue
+                            continue
 
-                    # Process messages from others
-                    if msg_id and msg_id not in processed_messages and sender_id != my_user_id:
+                        sender_id = str(item.get("user_id", ""))
+                        item_type = item.get("item_type", "")
+
+                        # Only text messages can be replied to; mark the rest seen.
+                        if item_type != "text":
+                            save_processed(msg_id, processed_messages, account_id)
+                            continue
+
+                        msg_text = item.get("text", "").strip()
+
+                        # Commands from your own account (global on/off).
+                        # Normalize hard: phone keyboards auto-capitalize and may
+                        # add stray spaces/punctuation.
+                        if sender_id == my_user_id:
+                            cmd = "".join(c for c in msg_text.lower() if c.isalnum() or c == "!")
+                            if cmd.startswith("!"):
+                                print(f"  [cmd] Detected command from your account: '{msg_text}' -> parsed '{cmd}'")
+                            if cmd in ("!disablebot", "!disable", "!stopbot", "!stop"):
+                                bot_enabled = False
+                                print("🔴 Bot DISABLED via command.")
+                            elif cmd in ("!enablebot", "!enable", "!startbot", "!start"):
+                                bot_enabled = True
+                                print("🟢 Bot ENABLED via command.")
+                            save_processed(msg_id, processed_messages, account_id)
+                            continue
+
                         # The person you're chatting with can pause/resume the bot
                         # for THIS conversation only by sending !stop / !start.
                         other_cmd = "".join(c for c in msg_text.lower() if c.isalnum() or c == "!")
@@ -379,59 +442,19 @@ def main():
                             save_processed(msg_id, processed_messages, account_id)
                             continue
 
+                        # Reply to this message. Each message gets its own reply,
+                        # so a burst of 2-3 messages gets 2-3 answers in order.
                         print(f"\n📨 New message from {sender_id}: {msg_text}")
                         ai_reply = get_ai_response(msg_text, db_bio, db_assistant_name)
                         print(f"🤖 Replying: {ai_reply[:100]}...")
 
-                        # 3. Send reply using the PHYSICAL BROWSER UI!
-                        # This bypasses ALL bot detection because it's a real browser action.
-                        try:
-                            # Go to the specific chat thread
-                            print(f"  [UI] Navigating to thread {thread_id}...")
-                            page.goto(f"https://www.instagram.com/direct/t/{thread_id}/", wait_until="networkidle")
-
-                            # networkidle already waits for the page to settle;
-                            # a short pause is enough for the composer to mount.
-                            time.sleep(1)
-
-                            # Clear message-request overlays / popups covering the composer
-                            handle_thread_blockers(page)
-
-                            # Locate the message box. Message requests have NO composer
-                            # until accepted, so if it isn't there, try accepting once
-                            # more and wait again before giving up.
-                            message_box = page.locator("div[contenteditable='true'][role='textbox']").first
-                            try:
-                                message_box.wait_for(state="visible", timeout=10000)
-                            except Exception:
-                                handle_thread_blockers(page)
-                                message_box.wait_for(state="visible", timeout=8000)
-
-                            try:
-                                message_box.click(timeout=5000)
-                            except Exception:
-                                # Something still overlaps the box; force past the
-                                # pointer-events check as a last resort.
-                                print("  [UI] Composer click intercepted — forcing focus...")
-                                message_box.click(force=True)
-                            message_box.fill(ai_reply)
-                            message_box.press("Enter")
-
-                            print("✅ Reply sent successfully via UI!")
+                        if send_reply(page, thread_id, ai_reply, account_id):
                             save_processed(msg_id, processed_messages, account_id)
 
-                            # Brief pause so the send fully registers before moving on.
-                            time.sleep(1)
-                        except Exception as e:
-                            print(f"⚠️ Failed to send reply via UI: {e}")
-                            # Save a screenshot of the thread so we can see what's
-                            # actually on screen (e.g. the real Accept button text).
-                            try:
-                                shot = f"debug_{account_id}_{thread_id}.png"
-                                page.screenshot(path=shot)
-                                print(f"  [debug] Saved screenshot to {shot}")
-                            except Exception:
-                                pass
+                # After the first full pass, start replying to genuinely new messages.
+                if not primed:
+                    primed = True
+                    print("✅ Primed: existing messages marked as seen. Now replying to new ones.")
 
                 # Sleep before checking again
                 time.sleep(POLL_INTERVAL)
