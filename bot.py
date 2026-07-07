@@ -155,8 +155,46 @@ def handle_thread_blockers(page):
     return accepted
 
 
-def send_reply(page, thread_id, text, account_id):
-    """Navigate to a chat thread and send one reply. Returns True on success."""
+def try_reply_to_message(page, message_text):
+    """Hover the person's message and click Instagram's 'Reply' action so our
+    reply is threaded/quoted to that specific message (the 'X replied to your
+    message' style). Best-effort — returns False if the UI won't cooperate, and
+    the caller then just sends a normal message.
+    """
+    if not message_text:
+        return False
+    snippet = message_text[:40]  # long/emoji text can be hard to match in full
+    try:
+        bubble = page.get_by_text(snippet, exact=False).last
+        bubble.scroll_into_view_if_needed()
+        bubble.hover()
+        time.sleep(0.6)  # let the hover action icons appear
+        # Instagram shows a curved-arrow 'Reply' icon on hover. Try a few ways
+        # to find it since the markup/labels vary.
+        for locator in (
+            page.locator('div[role="button"][aria-label="Reply"]'),
+            page.locator('[aria-label="Reply"]'),
+            page.locator('svg[aria-label="Reply"]'),
+            page.get_by_role("button", name="Reply"),
+        ):
+            try:
+                if locator.count() > 0 and locator.last.is_visible():
+                    locator.last.click(timeout=2500)
+                    time.sleep(0.4)
+                    return True
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return False
+
+
+def send_reply(page, thread_id, text, account_id, reply_to_text=None):
+    """Navigate to a chat thread and send one reply. Returns True on success.
+
+    If reply_to_text is given, tries to thread the reply to that specific
+    message (Instagram's quote-reply), falling back to a plain message.
+    """
     try:
         print(f"  [UI] Navigating to thread {thread_id}...")
         page.goto(f"https://www.instagram.com/direct/t/{thread_id}/", wait_until="networkidle")
@@ -176,6 +214,10 @@ def send_reply(page, thread_id, text, account_id):
         except Exception:
             handle_thread_blockers(page)
             message_box.wait_for(state="visible", timeout=8000)
+
+        # Try to quote-reply to their specific message first.
+        if reply_to_text and try_reply_to_message(page, reply_to_text):
+            print("  [UI] Threaded reply to their message.")
 
         try:
             message_box.click(timeout=5000)
@@ -454,7 +496,7 @@ def main():
                         ai_reply = get_ai_response(msg_text, db_bio, db_assistant_name)
                         print(f"🤖 Replying: {ai_reply[:100]}...")
 
-                        if send_reply(page, thread_id, ai_reply, account_id):
+                        if send_reply(page, thread_id, ai_reply, account_id, reply_to_text=msg_text):
                             save_processed(msg_id, processed_messages, account_id)
 
                 # After the first full pass, start replying to genuinely new messages.
