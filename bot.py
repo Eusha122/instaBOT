@@ -8,6 +8,7 @@ import time
 import os
 import json
 import uuid
+import datetime
 from playwright.sync_api import sync_playwright
 import config
 
@@ -19,6 +20,14 @@ from supabase import create_client, Client
 # one server IP. 12s is a good balance of speed vs. safety once you're not
 # double-running bots; raise it back toward 20 if 429s return.
 POLL_INTERVAL = 12
+
+# Anti-abuse limits. Stops one person from spamming to burn your AI tokens.
+# Max AI replies per conversation per day (a 'contact the owner' notice is sent
+# once when the limit is hit, then the bot stays silent for that chat till reset).
+CONVO_DAILY_LIMIT = int(os.getenv("CONVO_DAILY_LIMIT", "10"))
+# Longest incoming message we send to the AI; anything past this is truncated so
+# a giant paste can't run up the token bill.
+MAX_MSG_CHARS = int(os.getenv("MAX_MSG_CHARS", "1500"))
 
 # Initialize Supabase client
 supabase: Client = create_client(config.SUPABASE_URL, config.SUPABASE_KEY)
@@ -73,6 +82,8 @@ def build_history(ordered_items, upto_index, my_user_id, thread_users, max_msgs=
         text = (it.get("text") or "").strip()
         if not text:
             continue
+        if len(text) > 500:
+            text = text[:500] + " …"
         uid = str(it.get("user_id", ""))
         role = "assistant" if uid == my_user_id else "user"
         turns.append({"role": role, "content": text})
@@ -86,6 +97,10 @@ def get_ai_response(user_message, bio, assistant_name, sender_name="", sender_us
         "Authorization": f"Bearer {config.DO_AI_API_KEY}",
         "Content-Type": "application/json"
     }
+
+    # Cap the incoming message so a huge paste can't run up the token bill.
+    if user_message and len(user_message) > MAX_MSG_CHARS:
+        user_message = user_message[:MAX_MSG_CHARS] + " [message truncated]"
 
     # Work out a usable first name, ignoring Instagram placeholders like
     # "Unknown User" that aren't really a name.
@@ -460,6 +475,9 @@ def main():
         # "seen" without replying, so the bot doesn't answer old chat history.
         # After that, every new message gets a reply — including bursts.
         primed = False
+        # Per-conversation daily AI-reply counter: {thread_id: {"date","count","notified"}}.
+        # Caps how many AI replies one chat can get per day (anti-token-abuse).
+        convo_counts = {}
 
         while True:
             try:
@@ -606,6 +624,31 @@ def main():
                             save_processed(msg_id, processed_messages, account_id)
                             continue
 
+                        # Per-conversation daily limit — stops spammers burning tokens.
+                        today = datetime.date.today().isoformat()
+                        rec = convo_counts.get(thread_id)
+                        if not rec or rec["date"] != today:
+                            rec = {"date": today, "count": 0, "notified": False}
+                            convo_counts[thread_id] = rec
+
+                        if rec["count"] >= CONVO_DAILY_LIMIT:
+                            # Send the "limit reached" notice once (no AI call = no
+                            # tokens), then stay silent for this chat until tomorrow.
+                            if not rec["notified"]:
+                                owner_first = (account_name or "the owner").split()[0]
+                                notice = (
+                                    f"Heads up — you've hit the daily message limit {owner_first} set "
+                                    f"for this assistant 🙏 Please reach out to {owner_first} directly "
+                                    f"to keep chatting!"
+                                )
+                                print(f"🚫 Thread {thread_id} hit daily limit ({CONVO_DAILY_LIMIT}) — sending notice.")
+                                send_reply(page, thread_id, notice, account_id, reply_to_text=msg_text)
+                                rec["notified"] = True
+                            else:
+                                print(f"🚫 Thread {thread_id} over daily limit — staying silent.")
+                            save_processed(msg_id, processed_messages, account_id)
+                            continue
+
                         # Reply to this message. Each message gets its own reply,
                         # so a burst of 2-3 messages gets 2-3 answers in order.
                         sender_info = thread_users.get(sender_id, {})
@@ -625,6 +668,7 @@ def main():
 
                         if send_reply(page, thread_id, ai_reply, account_id, reply_to_text=msg_text):
                             save_processed(msg_id, processed_messages, account_id)
+                            rec["count"] += 1
 
                 # After the first full pass, start replying to genuinely new messages.
                 if not primed:
