@@ -10,6 +10,38 @@ export default function AdminDashboard() {
   const [visibleSessions, setVisibleSessions] = useState<{[key: string]: boolean}>({});
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [viewingKb, setViewingKb] = useState<any | null>(null);
+  const [editBio, setEditBio] = useState('');
+  const [editProxy, setEditProxy] = useState('');
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  const openEditor = (user: any) => {
+    setEditBio(user.bio || '');
+    setEditProxy(user.proxy || '');
+    setViewingKb(user);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!viewingKb) return;
+    setSavingEdit(true);
+    try {
+      const res = await fetch('/api/admin/users', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: viewingKb.id, bio: editBio, proxy: editProxy }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        alert(data.error || 'Failed to save.');
+        return;
+      }
+      setUsers(users.map(u => (u.id === viewingKb.id ? { ...u, bio: editBio, proxy: editProxy } : u)));
+      setViewingKb(null);
+    } catch {
+      alert('Network error. Please try again.');
+    } finally {
+      setSavingEdit(false);
+    }
+  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -240,7 +272,7 @@ export default function AdminDashboard() {
                           {user.bio}
                         </div>
                         <button
-                          onClick={() => setViewingKb(user)}
+                          onClick={() => openEditor(user)}
                           style={{
                             background: 'rgba(96, 165, 250, 0.1)',
                             border: '1px solid rgba(96, 165, 250, 0.3)',
@@ -251,7 +283,7 @@ export default function AdminDashboard() {
                             fontSize: '0.8rem',
                             whiteSpace: 'nowrap'
                           }}>
-                          View
+                          Edit
                         </button>
                       </div>
                     </td>
@@ -310,7 +342,7 @@ export default function AdminDashboard() {
               }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '20px 24px', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
                 <div>
-                  <h2 style={{ margin: 0, fontSize: '1.2rem', color: '#fff' }}>Knowledge Base</h2>
+                  <h2 style={{ margin: 0, fontSize: '1.2rem', color: '#fff' }}>Edit Bot</h2>
                   <p style={{ margin: '4px 0 0', color: '#888', fontSize: '0.85rem' }}>
                     {viewingKb.name} &middot; {viewingKb.assistant_name}
                   </p>
@@ -322,17 +354,66 @@ export default function AdminDashboard() {
                 </button>
               </div>
               <div style={{ padding: '24px', overflowY: 'auto' }}>
-                <pre style={{
-                  margin: 0,
-                  whiteSpace: 'pre-wrap',
-                  wordBreak: 'break-word',
-                  fontFamily: 'monospace',
-                  fontSize: '0.85rem',
-                  color: '#d4d4d4',
-                  lineHeight: 1.6
-                }}>
-                  {viewingKb.bio || 'No knowledge base set for this bot.'}
-                </pre>
+                <label style={{ display: 'block', color: '#a3a3a3', fontSize: '0.8rem', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Knowledge Base
+                </label>
+                <textarea
+                  value={editBio}
+                  onChange={(e) => setEditBio(e.target.value)}
+                  rows={10}
+                  placeholder="Facts, rules, personality for this bot..."
+                  style={{
+                    width: '100%',
+                    background: 'rgba(0,0,0,0.3)',
+                    border: '1px solid rgba(255,255,255,0.15)',
+                    borderRadius: '8px',
+                    color: '#d4d4d4',
+                    padding: '12px',
+                    fontFamily: 'monospace',
+                    fontSize: '0.85rem',
+                    lineHeight: 1.6,
+                    resize: 'vertical',
+                    boxSizing: 'border-box'
+                  }}
+                />
+
+                <label style={{ display: 'block', color: '#a3a3a3', fontSize: '0.8rem', margin: '18px 0 6px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Proxy <span style={{ textTransform: 'none', color: '#666' }}>(optional — one per account to avoid rate limits)</span>
+                </label>
+                <input
+                  type="text"
+                  value={editProxy}
+                  onChange={(e) => setEditProxy(e.target.value)}
+                  placeholder="http://user:pass@host:port  or  host:port:user:pass"
+                  style={{
+                    width: '100%',
+                    background: 'rgba(0,0,0,0.3)',
+                    border: '1px solid rgba(255,255,255,0.15)',
+                    borderRadius: '8px',
+                    color: '#d4d4d4',
+                    padding: '12px',
+                    fontFamily: 'monospace',
+                    fontSize: '0.85rem',
+                    boxSizing: 'border-box'
+                  }}
+                />
+                <p style={{ margin: '8px 0 0', color: '#666', fontSize: '0.75rem' }}>
+                  Use residential/mobile proxies for Instagram. Leave blank to run direct.
+                  Changes take effect the next time the bot restarts.
+                </p>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', padding: '16px 24px', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+                <button
+                  onClick={() => setViewingKb(null)}
+                  style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', color: '#ccc', padding: '10px 18px', borderRadius: '8px', cursor: 'pointer' }}>
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSaveEdit}
+                  disabled={savingEdit}
+                  style={{ background: '#3b82f6', border: 'none', color: '#fff', padding: '10px 18px', borderRadius: '8px', cursor: savingEdit ? 'not-allowed' : 'pointer', fontWeight: 'bold', opacity: savingEdit ? 0.7 : 1 }}>
+                  {savingEdit ? 'Saving...' : 'Save Changes'}
+                </button>
               </div>
             </div>
           </div>

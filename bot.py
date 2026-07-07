@@ -242,6 +242,39 @@ def send_reply(page, thread_id, text, account_id, reply_to_text=None):
         return False
 
 
+def parse_proxy(proxy_str):
+    """Convert a proxy string into Playwright's proxy dict, or None if empty.
+
+    Accepts the common formats providers hand out:
+      http://user:pass@host:port
+      socks5://host:port
+      host:port:user:pass
+      host:port
+    """
+    if not proxy_str or not str(proxy_str).strip():
+        return None
+    p = str(proxy_str).strip()
+
+    if "://" in p:
+        from urllib.parse import urlparse
+        u = urlparse(p)
+        cfg = {"server": f"{u.scheme}://{u.hostname}:{u.port}"}
+        if u.username:
+            cfg["username"] = u.username
+        if u.password:
+            cfg["password"] = u.password
+        return cfg
+
+    parts = p.split(":")
+    if len(parts) == 2:
+        return {"server": f"http://{parts[0]}:{parts[1]}"}
+    if len(parts) == 4:
+        host, port, user, pw = parts
+        return {"server": f"http://{host}:{port}", "username": user, "password": pw}
+    # Unknown shape — assume it's already a usable server string.
+    return {"server": p}
+
+
 def main():
     args = parse_args()
     account_id = args.account_id
@@ -258,6 +291,7 @@ def main():
     db_bio = user_data.get('bio', '')
     db_assistant_name = user_data.get('assistant_name', 'Assistant')
     account_name = user_data.get('name') or account_id
+    proxy_cfg = parse_proxy(user_data.get('proxy'))
     
     print(f"✅ Found user! Starting Playwright Bot for {account_id}...")
     
@@ -280,7 +314,16 @@ def main():
             "--mute-audio",
             "--js-flags=--max-old-space-size=256",
         ] if args.headless else []
-        browser = p.chromium.launch(headless=args.headless, args=launch_args)
+
+        launch_kwargs = {"headless": args.headless, "args": launch_args}
+        # Route this account's whole browser (page + API calls) through its own
+        # proxy, so each account looks like a different IP and they stop sharing
+        # one rate-limit bucket. No proxy set = runs direct, like before.
+        if proxy_cfg:
+            launch_kwargs["proxy"] = proxy_cfg
+            print(f"🌐 Using proxy for this account: {proxy_cfg['server']}")
+
+        browser = p.chromium.launch(**launch_kwargs)
         
         # Load saved session if it exists
         context_args = {
