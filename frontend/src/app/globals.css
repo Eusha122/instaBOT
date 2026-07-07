@@ -1,0 +1,165 @@
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;700&family=Sora:wght@800&display=swap');
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Manrope', sans-serif;
+  background-color: #08080a;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 90px;
+  padding-bottom: 90px;
+}
+
+.layout-wrapper {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0 20px;
+}
+
+/* Header */
+.header-section {
+  max-width: 720px;
+  text-align: center;
+  margin-bottom: 50px;
+}
+
+.header-section h1 {
+  font-family: 'Sora', sans-serif;
+  font-size: 56px;
+  font-weight: 800;
+  color: #f5f3fc;
+  letter-spacing: -0.025em;
+  margin-bottom: 16px;
+  line-height: 1.1;
+}
+
+.header-section p {
+  font-size: 18px;
+  font-weight: 500;
+  color: rgba(226, 220, 245, 0.6);
+  line-height: 1.6;
+}
+
+/* Skeuomorphic Form Card */
+.form-card {
+  width: 100%;
+  max-width: 620px;
+  background-color: #16161c;
+  border-radius: 28px;
+  padding: 40px;
+  
+  /* Skeuomorphic Bevel */
+  border-top: 1px solid rgba(255, 255, 255, 0.16);
+  border-left: 1px solid rgba(255, 255, 255, 0.10);
+  border-right: 1px solid rgba(0, 0, 0, 0.3);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.4);
+
+  /* Outer Elevation Layers */
+  box-shadow: 
+    0 2px 4px rgba(0, 0, 0, 0.3), 
+    0 10px 20px rgba(0, 0, 0, 0.35), 
+    0 30px 60px -12px rgba(0, 0, 0, 0.6);
+}
+
+/* Form Group */
+.form-group {
+  margin-bottom: 24px;
+  display: flex;
+  flex-direction: column;
+}
+
+.form-group label {
+  font-size: 13px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.85);
+  letter-spacing: 0.02em;
+  margin-bottom: 8px;
+}
+
+.form-group label span.muted {
+  color: rgba(255, 255, 255, 0.4);
+  font-weight: 500;
+}
+
+/* Inputs */
+.form-group input,
+.form-group textarea {
+  width: 100%;
+  border-radius: 14px;
+  background-color: rgba(255, 255, 255, 0.035);
+  
+  /* Thin border with darker top edge */
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-top-color: rgba(0, 0, 0, 0.4);
+
+  /* Skeuomorphic Inset Shadow */
+  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.55);
+  
+  color: #ffffff;
+  padding: 14px 16px;
+  font-family: inherit;
+  font-size: 15px;
+  outline: none;
+  transition: all 0.2s ease;
+}
+
+.form-group input::placeholder,
+.form-group textarea::placeholder {
+  color: rgba(255, 255, 255, 0.25);
+}
+
+.form-group textarea {
+  resize: none;
+  min-height: 110px;
+}
+
+.form-group input:focus,
+.form-group textarea:focus {
+  border-color: rgba(167, 139, 250, 0.55);
+  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.55), 0 0 0 4px rgba(139, 92, 246, 0.16);
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+/* Submit Button */
+.btn-submit {
+  width: 100%;
+  padding: 17px;
+  margin-top: 10px;
+  border-radius: 14px;
+  background-color: #6d28d9;
+  border: none;
+  color: #ffffff;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  
+  /* Skeuomorphic Emboss + Drop Shadow */
+  box-shadow: 
+    inset 0 1px 1px rgba(255, 255, 255, 0.25), 
+    inset 0 -2px 4px rgba(0, 0, 0, 0.3),
+    0 4px 10px rgba(0, 0, 0, 0.3);
+    
+  transition: all 0.15s ease;
+}
+
+.btn-submit:active:not(:disabled) {
+  /* Pressed state */
+  box-shadow: 
+    inset 0 3px 6px rgba(0, 0, 0, 0.4),
+    0 1px 2px rgba(0, 0, 0, 0.2);
+  transform: translateY(1px);
+}
+
+.btn-submit:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
