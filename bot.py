@@ -58,7 +58,32 @@ def save_processed(msg_id, processed_messages, account_id):
     with open(msgs_file, "w") as f:
         json.dump(list(processed_messages), f)
 
-def get_ai_response(user_message, bio, assistant_name, sender_name="", sender_username=""):
+def build_history(ordered_items, upto_index, my_user_id, thread_users, max_msgs=8):
+    """Format the recent messages before the current one as chat context.
+
+    ordered_items is oldest->newest. Includes both the other person's messages
+    and the bot's own past replies, so it stays consistent and doesn't repeat.
+    """
+    start = max(0, upto_index - max_msgs)
+    lines = []
+    for it in ordered_items[start:upto_index]:
+        if it.get("item_type") != "text":
+            continue
+        text = (it.get("text") or "").strip()
+        if not text:
+            continue
+        uid = str(it.get("user_id", ""))
+        if uid == my_user_id:
+            lines.append(f"You: {text}")
+        else:
+            info = thread_users.get(uid, {})
+            raw = info.get("full_name") or info.get("username") or ""
+            name = raw.split()[0] if raw else "Them"
+            lines.append(f"{name}: {text}")
+    return "\n".join(lines)
+
+
+def get_ai_response(user_message, bio, assistant_name, sender_name="", sender_username="", history=""):
     import requests
     url = config.DO_AI_ENDPOINT
     headers = {
@@ -104,8 +129,11 @@ def get_ai_response(user_message, bio, assistant_name, sender_name="", sender_us
         f"briefly and matter-of-factly.\n"
         f"5. Don't make up facts. If you don't know something, stay casual and vague.\n"
         f"6. Never mention STEM, physics, math, or OneShot AI.\n"
-        f"7. Output ONLY the reply text — no quotes, no labels.\n\n"
-        f"Their message: '{user_message}'"
+        f"7. Use the recent conversation below to stay consistent — don't repeat yourself or "
+        f"re-introduce yourself if you already have. Reply as a natural continuation.\n"
+        f"8. Output ONLY the reply text — no quotes, no labels.\n\n"
+        + (f"Recent conversation so far (oldest to newest):\n{history}\n\n" if history else "")
+        + f"Their latest message: '{user_message}'"
     )
     
     payload = {
@@ -504,7 +532,8 @@ def main():
 
                     # Go oldest -> newest so we reply in the order messages arrived.
                     # The inbox returns items newest-first, hence reversed().
-                    for item in reversed(items):
+                    ordered = list(reversed(items))
+                    for idx, item in enumerate(ordered):
                         msg_id = item.get("item_id", "")
                         if not msg_id or msg_id in processed_messages:
                             continue
@@ -567,9 +596,13 @@ def main():
                         sender_name = sender_info.get("full_name", "")
                         who = sender_name or sender_username or sender_id
                         print(f"\n📨 New message from {who}: {msg_text}")
+                        # Give the AI the recent conversation before this message
+                        # so replies stay consistent and in-context.
+                        history = build_history(ordered, idx, my_user_id, thread_users)
                         ai_reply = get_ai_response(
                             msg_text, db_bio, db_assistant_name,
                             sender_name=sender_name, sender_username=sender_username,
+                            history=history,
                         )
                         print(f"🤖 Replying: {ai_reply[:100]}...")
 
