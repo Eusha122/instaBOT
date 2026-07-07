@@ -59,13 +59,14 @@ def save_processed(msg_id, processed_messages, account_id):
         json.dump(list(processed_messages), f)
 
 def build_history(ordered_items, upto_index, my_user_id, thread_users, max_msgs=8):
-    """Format the recent messages before the current one as chat context.
+    """Return the recent messages before the current one as chat turns.
 
-    ordered_items is oldest->newest. Includes both the other person's messages
-    and the bot's own past replies, so it stays consistent and doesn't repeat.
+    ordered_items is oldest->newest. Each turn is {"role": ..., "content": ...}
+    where the bot's own past replies are 'assistant' and the other person's are
+    'user' — so the model treats it as a real conversation it can follow.
     """
     start = max(0, upto_index - max_msgs)
-    lines = []
+    turns = []
     for it in ordered_items[start:upto_index]:
         if it.get("item_type") != "text":
             continue
@@ -73,17 +74,12 @@ def build_history(ordered_items, upto_index, my_user_id, thread_users, max_msgs=
         if not text:
             continue
         uid = str(it.get("user_id", ""))
-        if uid == my_user_id:
-            lines.append(f"You: {text}")
-        else:
-            info = thread_users.get(uid, {})
-            raw = info.get("full_name") or info.get("username") or ""
-            name = raw.split()[0] if raw else "Them"
-            lines.append(f"{name}: {text}")
-    return "\n".join(lines)
+        role = "assistant" if uid == my_user_id else "user"
+        turns.append({"role": role, "content": text})
+    return turns
 
 
-def get_ai_response(user_message, bio, assistant_name, sender_name="", sender_username="", history=""):
+def get_ai_response(user_message, bio, assistant_name, sender_name="", sender_username="", history=None):
     import requests
     url = config.DO_AI_ENDPOINT
     headers = {
@@ -109,7 +105,7 @@ def get_ai_response(user_message, bio, assistant_name, sender_name="", sender_us
             f"their name is, just say honestly that you can't see it.\n"
         )
 
-    prompt_wrapper = (
+    system_prompt = (
         f"You are {assistant_name}, a personal AI assistant that replies to Instagram DMs on behalf "
         f"of your owner. Reply like a real, friendly person texting — warm and easygoing, not stiff "
         f"or one-word, but not over-the-top either.\n\n"
@@ -123,22 +119,27 @@ def get_ai_response(user_message, bio, assistant_name, sender_name="", sender_us
         f"Rules:\n"
         f"1. Keep it short and natural — usually one sentence, at most one emoji.\n"
         f"2. Be friendly and personable, not dry or robotic. Sound like a real person, not a form.\n"
-        f"3. If asked who made or built you, credit ONLY your owner. Do NOT invent or name any other "
+        f"3. FOLLOW THE CONVERSATION. Read the messages above and reply to what was actually just "
+        f"said. If their message is a short answer like 'yes', 'no', or 'sure' to something you just "
+        f"asked, act on THAT answer — do NOT reset or ask 'what do you want?' again.\n"
+        f"4. Don't repeat yourself or re-introduce yourself if you already have earlier in the chat.\n"
+        f"5. If asked who made or built you, credit ONLY your owner. Do NOT invent or name any other "
         f"people, friends, or collaborators.\n"
-        f"4. Don't gush or over-compliment your owner. Mention facts about them only when asked, "
+        f"6. Don't gush or over-compliment your owner. Mention facts about them only when asked, "
         f"briefly and matter-of-factly.\n"
-        f"5. Don't make up facts. If you don't know something, stay casual and vague.\n"
-        f"6. Never mention STEM, physics, math, or OneShot AI.\n"
-        f"7. Use the recent conversation below to stay consistent — don't repeat yourself or "
-        f"re-introduce yourself if you already have. Reply as a natural continuation.\n"
-        f"8. Output ONLY the reply text — no quotes, no labels.\n\n"
-        + (f"Recent conversation so far (oldest to newest):\n{history}\n\n" if history else "")
-        + f"Their latest message: '{user_message}'"
+        f"7. Don't make up facts. If you don't know something, stay casual and vague.\n"
+        f"8. Never mention STEM, physics, math, or OneShot AI.\n"
+        f"9. Output ONLY the reply text — no quotes, no labels."
     )
-    
+
+    messages = [{"role": "system", "content": system_prompt}]
+    if history:
+        messages.extend(history)
+    messages.append({"role": "user", "content": user_message})
+
     payload = {
-        "model": "gpt-3.5-turbo",
-        "messages": [{"role": "user", "content": prompt_wrapper}]
+        "model": getattr(config, "DO_AI_MODEL", None) or "gpt-3.5-turbo",
+        "messages": messages,
     }
     try:
         response = requests.post(url, headers=headers, json=payload, timeout=30)
