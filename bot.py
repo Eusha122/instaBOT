@@ -25,9 +25,10 @@ POLL_INTERVAL = 12
 # Max AI replies per conversation per day (a 'contact the owner' notice is sent
 # once when the limit is hit, then the bot stays silent for that chat till reset).
 CONVO_DAILY_LIMIT = int(os.getenv("CONVO_DAILY_LIMIT", "10"))
-# Longest incoming message we send to the AI; anything past this is truncated so
-# a giant paste can't run up the token bill.
-MAX_MSG_CHARS = int(os.getenv("MAX_MSG_CHARS", "1500"))
+# Messages longer than this are treated as spam/paste and get a short canned
+# reply WITHOUT calling the AI at all — so a wall of text costs zero tokens.
+# ~700 chars is a very long DM; normal messages are far shorter.
+MAX_MSG_CHARS = int(os.getenv("MAX_MSG_CHARS", "700"))
 
 # Initialize Supabase client
 supabase: Client = create_client(config.SUPABASE_URL, config.SUPABASE_KEY)
@@ -647,6 +648,15 @@ def main():
                             else:
                                 print(f"🚫 Thread {thread_id} over daily limit — staying silent.")
                             save_processed(msg_id, processed_messages, account_id)
+                            continue
+
+                        # Reject walls of text without spending any tokens.
+                        if len(msg_text) > MAX_MSG_CHARS:
+                            print(f"✂️ Message too long ({len(msg_text)} chars) — skipping AI, short canned reply.")
+                            short = "that's a lot to read 😅 mind keeping it short? what's up?"
+                            if send_reply(page, thread_id, short, account_id, reply_to_text=msg_text):
+                                save_processed(msg_id, processed_messages, account_id)
+                                rec["count"] += 1  # still counts toward the daily cap
                             continue
 
                         # Reply to this message. Each message gets its own reply,
