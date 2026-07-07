@@ -1,0 +1,53 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+venv/
+.venv/
+env/
+
+# Environment secrets (CRITICAL — never commit these)
+.env
+.env.local
+.env*.local
+frontend/.env.local
+
+# Node
+node_modules/
+frontend/node_modules/
+
+# Next.js
+.next/
+frontend/.next/
+next-env.d.ts
+
+# Application specific
+session.json
+state.json
+processed_messages.json
+*_state.json
+*_processed_messages.json
+*_profile.txt
+
+# Debug output
+debug_*.png
+debug_inbox.png

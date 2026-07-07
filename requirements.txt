@@ -1,0 +1,6 @@
+instagrapi==2.1.3
+requests==2.31.0
+python-dotenv==1.0.1
+supabase
+psutil==6.1.0
+playwright==1.49.0
