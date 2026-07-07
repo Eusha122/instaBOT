@@ -144,12 +144,19 @@ def get_ai_response(user_message, bio, assistant_name, sender_name="", sender_us
     model = getattr(config, "DO_AI_MODEL", "") or ""
     if model.strip():
         payload["model"] = model.strip()
+    response = None
     try:
         response = requests.post(url, headers=headers, json=payload, timeout=30)
         response.raise_for_status()
         return response.json()["choices"][0]["message"]["content"]
     except Exception as e:
         print(f"Error calling DO_AI API: {e}")
+        # Print DO's actual error body — it says exactly what it didn't like.
+        if response is not None:
+            try:
+                print(f"   response body: {response.text[:600]}")
+            except Exception:
+                pass
         return "Sorry, I'm having trouble connecting to my brain right now. 🤖"
 
 def try_click_by_text(page, texts, timeout=2500):
