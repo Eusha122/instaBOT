@@ -58,13 +58,25 @@ def save_processed(msg_id, processed_messages, account_id):
     with open(msgs_file, "w") as f:
         json.dump(list(processed_messages), f)
 
-def get_ai_response(user_message, bio, assistant_name):
+def get_ai_response(user_message, bio, assistant_name, sender_name="", sender_username=""):
     import requests
     url = config.DO_AI_ENDPOINT
     headers = {
         "Authorization": f"Bearer {config.DO_AI_API_KEY}",
         "Content-Type": "application/json"
     }
+
+    # Give the AI the person's name so it can address them naturally.
+    # Prefer their first name; fall back to the @username.
+    first_name = sender_name.split()[0] if sender_name else ""
+    who_line = ""
+    if first_name or sender_username:
+        label = first_name or sender_username
+        handle = f" (@{sender_username})" if sender_username else ""
+        who_line = (
+            f"- Their name is {label}{handle}. You can address them by their first name "
+            f"now and then to feel personal, but don't force it into every message.\n"
+        )
 
     prompt_wrapper = (
         f"You are {assistant_name}, a personal AI assistant that replies to Instagram DMs on behalf "
@@ -73,6 +85,7 @@ def get_ai_response(user_message, bio, assistant_name):
         f"Background about your OWNER (the person you represent):\n{bio}\n\n"
         f"Who you are talking to — READ CAREFULLY:\n"
         f"- The person messaging you is a stranger or friend reaching out. They are NOT your owner.\n"
+        f"{who_line}"
         f"- Never assume the person texting is your owner, even if they mention your owner's name.\n"
         f"- If they ask 'who are you' / 'what's your name', say you are {assistant_name}, your owner's "
         f"assistant. Do NOT tell them they are the owner.\n\n"
@@ -475,6 +488,14 @@ def main():
 
                     thread_id = thread.get("thread_id", "")
 
+                    # Map each participant's numeric id to their username/name so
+                    # we can address the sender by name in replies.
+                    thread_users = {
+                        str(u.get("pk")): u
+                        for u in thread.get("users", [])
+                        if u.get("pk")
+                    }
+
                     # Go oldest -> newest so we reply in the order messages arrived.
                     # The inbox returns items newest-first, hence reversed().
                     for item in reversed(items):
@@ -535,8 +556,15 @@ def main():
 
                         # Reply to this message. Each message gets its own reply,
                         # so a burst of 2-3 messages gets 2-3 answers in order.
-                        print(f"\n📨 New message from {sender_id}: {msg_text}")
-                        ai_reply = get_ai_response(msg_text, db_bio, db_assistant_name)
+                        sender_info = thread_users.get(sender_id, {})
+                        sender_username = sender_info.get("username", "")
+                        sender_name = sender_info.get("full_name", "")
+                        who = sender_name or sender_username or sender_id
+                        print(f"\n📨 New message from {who}: {msg_text}")
+                        ai_reply = get_ai_response(
+                            msg_text, db_bio, db_assistant_name,
+                            sender_name=sender_name, sender_username=sender_username,
+                        )
                         print(f"🤖 Replying: {ai_reply[:100]}...")
 
                         if send_reply(page, thread_id, ai_reply, account_id, reply_to_text=msg_text):
