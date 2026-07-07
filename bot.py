@@ -14,7 +14,10 @@ import config
 import argparse
 from supabase import create_client, Client
 
-POLL_INTERVAL = 5
+# How often to check the inbox, in seconds. Too low gets the account
+# rate-limited (HTTP 429) by Instagram, especially with several bots sharing
+# one server IP. 20s is a safer baseline.
+POLL_INTERVAL = 20
 
 # Initialize Supabase client
 supabase: Client = create_client(config.SUPABASE_URL, config.SUPABASE_KEY)
@@ -232,6 +235,7 @@ def main():
         # these chats until they send !start. Tracked per thread, in memory.
         disabled_threads = set()
         consecutive_html = 0  # count of API calls that returned HTML instead of JSON
+        rate_limit_backoff = 0  # grows each time we hit a 429, resets on success
 
         while True:
             try:
@@ -242,10 +246,24 @@ def main():
                     headers={"X-IG-App-ID": "936619743392459"}
                 )
 
+                if inbox_resp.status == 429:
+                    # Rate limited. Hammering makes it worse, so back off
+                    # exponentially: 60s, 120s, 240s ... capped at 15 minutes.
+                    rate_limit_backoff = min(rate_limit_backoff + 1, 4)
+                    wait = 60 * (2 ** (rate_limit_backoff - 1))
+                    wait = min(wait, 900)
+                    print(f"⏳ Rate limited by Instagram (429). Backing off for {wait}s. "
+                          f"Too many requests from this account/IP.")
+                    time.sleep(wait)
+                    continue
+
                 if inbox_resp.status != 200:
                     print(f"⚠️ Inbox fetch failed: {inbox_resp.status}")
-                    time.sleep(10)
+                    time.sleep(15)
                     continue
+
+                # Reached a good response — reset the backoff.
+                rate_limit_backoff = 0
 
                 try:
                     data = inbox_resp.json()
