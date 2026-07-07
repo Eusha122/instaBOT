@@ -610,12 +610,17 @@ def main():
                             cmd = "".join(c for c in msg_text.lower() if c.isalnum() or c == "!")
                             if cmd.startswith("!"):
                                 print(f"  [cmd] Detected command from your account: '{msg_text}' -> parsed '{cmd}'")
-                            if cmd in ("!disablebot", "!disable", "!stopbot", "!stop"):
+                            if cmd in ("!disablebot", "!disable", "!stopbot", "!stop", "!off"):
                                 bot_enabled = False
                                 print("🔴 Bot DISABLED via command.")
-                            elif cmd in ("!enablebot", "!enable", "!startbot", "!start"):
+                            elif cmd in ("!enablebot", "!enable", "!startbot", "!start", "!on"):
+                                # Master reset: turn everything back on and clear
+                                # per-chat pauses AND daily limits, so it replies
+                                # again right away (even in a chat that maxed out).
                                 bot_enabled = True
-                                print("🟢 Bot ENABLED via command.")
+                                disabled_threads.clear()
+                                convo_counts.clear()
+                                print("🟢 Bot ENABLED via command (cleared chat pauses & daily limits).")
                             save_processed(msg_id, processed_messages, account_id)
                             continue
 
