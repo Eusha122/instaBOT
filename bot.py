@@ -66,16 +66,22 @@ def get_ai_response(user_message, bio, assistant_name, sender_name="", sender_us
         "Content-Type": "application/json"
     }
 
-    # Give the AI the person's name so it can address them naturally.
-    # Prefer their first name; fall back to the @username.
-    first_name = sender_name.split()[0] if sender_name else ""
-    who_line = ""
-    if first_name or sender_username:
-        label = first_name or sender_username
-        handle = f" (@{sender_username})" if sender_username else ""
+    # Work out a usable first name, ignoring Instagram placeholders like
+    # "Unknown User" that aren't really a name.
+    clean_name = (sender_name or "").strip()
+    if clean_name.lower() in ("unknown user", "unknown", "instagram user", "user"):
+        clean_name = ""
+    first_name = clean_name.split()[0] if clean_name else ""
+
+    if first_name:
         who_line = (
-            f"- Their name is {label}{handle}. You can address them by their first name "
-            f"now and then to feel personal, but don't force it into every message.\n"
+            f"- Their name is {first_name}. Greet them by name and use it occasionally to feel "
+            f"personal — but not in every single message.\n"
+        )
+    else:
+        who_line = (
+            f"- You do NOT know this person's real name. Never make one up. If they ask what "
+            f"their name is, just say honestly that you can't see it.\n"
         )
 
     prompt_wrapper = (
