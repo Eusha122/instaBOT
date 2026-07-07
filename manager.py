@@ -1,3 +1,4 @@
+import os
 import sys
 import time
 import subprocess
@@ -5,6 +6,11 @@ from supabase import create_client, Client
 import config
 
 POLL_INTERVAL = 15  # Check for new users every 15 seconds
+
+# Hard cap on simultaneous bots. Each bot is a headless Chromium (~300-400 MB),
+# so on a 2 GB server 3 is about the safe ceiling before it runs out of memory
+# and freezes. Override with the MAX_BOTS env var if you size up the server.
+MAX_BOTS = int(os.getenv("MAX_BOTS", "3"))
 
 # Initialize Supabase client
 supabase: Client = create_client(config.SUPABASE_URL, config.SUPABASE_KEY)
@@ -83,6 +89,12 @@ def main():
                         current_ids.add(user_id)
 
                         if user_id not in active_bots:
+                            # Refuse to start more bots than the server can hold.
+                            if len(active_bots) >= MAX_BOTS:
+                                print(f"\n⚠️ Reached MAX_BOTS ({MAX_BOTS}). NOT starting a bot "
+                                      f"for {user_name} ({user_id}) to protect the server's memory. "
+                                      f"Raise MAX_BOTS or use a bigger server to run more.")
+                                continue
                             # We found a new user! Start a bot for them.
                             print(f"\n✨ New user detected in database: {user_name} ({user_id})")
                             start_bot(user_id, user_name)

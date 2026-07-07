@@ -166,8 +166,22 @@ def main():
     state_file = get_state_file(account_id)
     
     with sync_playwright() as p:
-        # Launch browser (headless for VPS, visible for local debugging)
-        browser = p.chromium.launch(headless=args.headless)
+        # Launch browser (headless for VPS, visible for local debugging).
+        # On a small server these flags cut Chromium's memory use a lot and
+        # avoid /dev/shm crashes; only applied in headless (VPS) mode.
+        launch_args = [
+            "--no-sandbox",
+            "--disable-dev-shm-usage",
+            "--disable-gpu",
+            "--disable-extensions",
+            "--disable-background-networking",
+            "--disable-default-apps",
+            "--disable-sync",
+            "--no-first-run",
+            "--mute-audio",
+            "--js-flags=--max-old-space-size=256",
+        ] if args.headless else []
+        browser = p.chromium.launch(headless=args.headless, args=launch_args)
         
         # Load saved session if it exists
         context_args = {
