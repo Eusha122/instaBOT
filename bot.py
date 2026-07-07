@@ -372,9 +372,20 @@ def main():
     db_assistant_name = user_data.get('assistant_name', 'Assistant')
     account_name = user_data.get('name') or account_id
     proxy_cfg = parse_proxy(user_data.get('proxy'))
-    
+
+    # This account's own numeric Instagram id, taken from the session cookie
+    # (the part before the ':'). Reliable source of "who am I", used so that
+    # !stop / !start sent from the owner's own account are always recognized.
+    account_pk = ""
+    if db_session_id:
+        try:
+            from urllib.parse import unquote
+            account_pk = unquote(db_session_id).split(":")[0]
+        except Exception:
+            account_pk = ""
+
     print(f"✅ Found user! Starting Playwright Bot for {account_id}...")
-    
+
     processed_messages = load_processed_messages(account_id)
     state_file = get_state_file(account_id)
     
@@ -544,12 +555,14 @@ def main():
                     continue
                 threads = data.get("inbox", {}).get("threads", [])
                 
+                # Prefer the API's viewer id, but fall back to the id from the
+                # session cookie so self-commands (!stop/!start) always work even
+                # when the inbox response omits viewer.pk.
                 my_user_id = data.get("viewer", {}).get("pk")
-                if my_user_id:
-                    my_user_id = str(my_user_id)
-                else:
-                    print("⚠️ Could not read your own account id (viewer.pk missing) — "
-                          "self-commands like !disablebot may not register this loop.")
+                my_user_id = str(my_user_id) if my_user_id else account_pk
+                if not my_user_id:
+                    print("⚠️ Could not determine your own account id — "
+                          "self-commands like !stop may not register this loop.")
 
                 for thread in threads:
                     items = thread.get("items", [])
