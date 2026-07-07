@@ -16,8 +16,9 @@ from supabase import create_client, Client
 
 # How often to check the inbox, in seconds. Too low gets the account
 # rate-limited (HTTP 429) by Instagram, especially with several bots sharing
-# one server IP. 20s is a safer baseline.
-POLL_INTERVAL = 20
+# one server IP. 12s is a good balance of speed vs. safety once you're not
+# double-running bots; raise it back toward 20 if 429s return.
+POLL_INTERVAL = 12
 
 # Initialize Supabase client
 supabase: Client = create_client(config.SUPABASE_URL, config.SUPABASE_KEY)
@@ -388,9 +389,10 @@ def main():
                             # Go to the specific chat thread
                             print(f"  [UI] Navigating to thread {thread_id}...")
                             page.goto(f"https://www.instagram.com/direct/t/{thread_id}/", wait_until="networkidle")
-                            
-                            # Wait a moment for the chat to load
-                            time.sleep(2)
+
+                            # networkidle already waits for the page to settle;
+                            # a short pause is enough for the composer to mount.
+                            time.sleep(1)
 
                             # Clear message-request overlays / popups covering the composer
                             handle_thread_blockers(page)
@@ -417,9 +419,9 @@ def main():
 
                             print("✅ Reply sent successfully via UI!")
                             save_processed(msg_id, processed_messages, account_id)
-                            
-                            # Wait a moment after sending before checking the next thing
-                            time.sleep(3)
+
+                            # Brief pause so the send fully registers before moving on.
+                            time.sleep(1)
                         except Exception as e:
                             print(f"⚠️ Failed to send reply via UI: {e}")
                             # Save a screenshot of the thread so we can see what's
