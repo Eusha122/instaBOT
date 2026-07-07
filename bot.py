@@ -105,7 +105,7 @@ def get_ai_response(user_message, bio, assistant_name, sender_name="", sender_us
             f"their name is, just say honestly that you can't see it.\n"
         )
 
-    system_prompt = (
+    instructions = (
         f"You are {assistant_name}, a personal AI assistant that replies to Instagram DMs on behalf "
         f"of your owner. Reply like a real, friendly person texting — warm and easygoing, not stiff "
         f"or one-word, but not over-the-top either.\n\n"
@@ -132,10 +132,16 @@ def get_ai_response(user_message, bio, assistant_name, sender_name="", sender_us
         f"9. Output ONLY the reply text — no quotes, no labels."
     )
 
-    messages = [{"role": "system", "content": system_prompt}]
+    # DigitalOcean GenAI agents forbid the 'system' role, so the instructions go
+    # into the final user message instead. History stays as real user/assistant
+    # turns above it, so the model still follows the conversation.
+    messages = []
     if history:
         messages.extend(history)
-    messages.append({"role": "user", "content": user_message})
+    messages.append({
+        "role": "user",
+        "content": f"{instructions}\n\nTheir latest message: '{user_message}'",
+    })
 
     # DigitalOcean GenAI agents use the model configured in the dashboard and
     # reject an unknown "model" field (400). So only send a model name if one is
